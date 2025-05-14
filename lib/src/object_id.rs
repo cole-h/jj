@@ -197,6 +197,36 @@ pub enum PrefixResolution<T> {
     AmbiguousMatch,
 }
 
+/// The result of a prefix search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrefixResolution2<T, Ambiguous = ()> {
+    NoMatch,
+    SingleMatch(T),
+    AmbiguousMatch(Ambiguous),
+}
+
+impl<T, Ambiguous> From<PrefixResolution2<T, Ambiguous>> for PrefixResolution<T> {
+    fn from(value: PrefixResolution2<T, Ambiguous>) -> Self {
+        match value {
+            PrefixResolution2::NoMatch => PrefixResolution::NoMatch,
+            PrefixResolution2::SingleMatch(x) => PrefixResolution::SingleMatch(x),
+            PrefixResolution2::AmbiguousMatch(_) => PrefixResolution::AmbiguousMatch,
+        }
+    }
+}
+
+impl<T, Ambiguous: Default> From<PrefixResolution<T>> for PrefixResolution2<T, Ambiguous> {
+    fn from(value: PrefixResolution<T>) -> Self {
+        match value {
+            PrefixResolution::NoMatch => PrefixResolution2::NoMatch,
+            PrefixResolution::SingleMatch(x) => PrefixResolution2::SingleMatch(x),
+            PrefixResolution::AmbiguousMatch => {
+                PrefixResolution2::AmbiguousMatch(Ambiguous::default())
+            }
+        }
+    }
+}
+
 impl<T> PrefixResolution<T> {
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> PrefixResolution<U> {
         match self {

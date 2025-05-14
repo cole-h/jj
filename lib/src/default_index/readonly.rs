@@ -24,6 +24,8 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
+use indexmap::IndexMap;
+use indexmap::IndexSet;
 use smallvec::smallvec;
 use thiserror::Error;
 
@@ -548,6 +550,14 @@ impl IndexSegment for ReadonlyIndexSegment {
             })
     }
 
+    fn resolve_change_id_ambiguous_prefixes(
+        &self,
+        prefix: &HexPrefix,
+    ) -> Option<IndexSet<ChangeId>> {
+        self.change_id_byte_prefix_to_lookup_pos(prefix.min_prefix_bytes())
+            .prefix_matches_ambiguous(prefix, |pos| self.change_lookup_id(pos))
+    }
+
     fn generation_number(&self, local_pos: LocalPosition) -> u32 {
         self.graph_entry(local_pos).generation_number()
     }
@@ -720,6 +730,31 @@ impl PositionLookupResult {
             (Some(id), None) => PrefixResolution::SingleMatch((id, lookup_pos)),
             (Some(_), Some(_)) => PrefixResolution::AmbiguousMatch,
             (None, _) => PrefixResolution::NoMatch,
+        }
+    }
+
+    /// Looks up matching elements from the current position, returns one if
+    /// the given `prefix` unambiguously matches.
+    fn prefix_matches_ambiguous<T: ObjectId + std::hash::Hash + std::cmp::Ord>(
+        self,
+        prefix: &HexPrefix,
+        lookup: impl FnMut(u32) -> T,
+    ) -> Option<IndexSet<T>> {
+        let lookup_pos = self.result.unwrap_or_else(|pos| pos);
+        let matches = (lookup_pos..self.size)
+            .map(lookup)
+            .take_while(|id| prefix.matches(id))
+            .fuse();
+        let mut m = IndexSet::new();
+
+        for m2 in matches {
+            m.insert(m2);
+        }
+
+        if m.is_empty() {
+            None
+        } else {
+            Some(m)
         }
     }
 }

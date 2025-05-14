@@ -18,6 +18,7 @@ use std::any::Any;
 use std::cmp::max;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io;
 use std::io::Write as _;
 use std::ops::Bound;
@@ -26,6 +27,7 @@ use std::sync::Arc;
 
 use blake2::Blake2b512;
 use digest::Digest as _;
+use indexmap::IndexSet;
 use itertools::Itertools as _;
 use smallvec::smallvec;
 use smallvec::SmallVec;
@@ -430,6 +432,15 @@ impl IndexSegment for MutableIndexSegment {
             .map(|(id, positions)| (id.clone(), positions.clone()))
     }
 
+    fn resolve_change_id_ambiguous_prefixes(
+        &self,
+        prefix: &HexPrefix,
+    ) -> Option<IndexSet<ChangeId>> {
+        let min_bytes_prefix = ChangeId::from_bytes(prefix.min_prefix_bytes());
+        resolve_id_ambiguous_prefixes(&self.change_lookup, prefix, &min_bytes_prefix)
+            .map(|p| p.into_iter().cloned().collect())
+    }
+
     fn generation_number(&self, local_pos: LocalPosition) -> u32 {
         self.graph[local_pos.0 as usize].generation_number
     }
@@ -595,5 +606,28 @@ fn resolve_id_prefix<'a, K: ObjectId + Ord, V>(
         (Some(entry), None) => PrefixResolution::SingleMatch(entry),
         (Some(_), Some(_)) => PrefixResolution::AmbiguousMatch,
         (None, _) => PrefixResolution::NoMatch,
+    }
+}
+
+fn resolve_id_ambiguous_prefixes<'a, K: ObjectId + Ord + std::hash::Hash, V>(
+    lookup_table: &'a BTreeMap<K, V>,
+    prefix: &HexPrefix,
+    min_bytes_prefix: &K,
+) -> Option<IndexSet<&'a K>> {
+    let matches = lookup_table
+        .range((Bound::Included(min_bytes_prefix), Bound::Unbounded))
+        .take_while(|&(id, _)| prefix.matches(id))
+        .fuse();
+
+    let mut m = IndexSet::new();
+
+    for (m2, _) in matches {
+        m.insert(m2);
+    }
+
+    if m.is_empty() {
+        None
+    } else {
+        Some(m)
     }
 }

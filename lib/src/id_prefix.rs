@@ -50,10 +50,10 @@ struct DisambiguationData {
     indexes: OnceCell<Indexes>,
 }
 
-struct Indexes {
-    commit_change_ids: Vec<(CommitId, ChangeId)>,
+pub struct Indexes {
+    pub commit_change_ids: Vec<(CommitId, ChangeId)>,
     commit_index: IdIndex<CommitId, u32, 4>,
-    change_index: IdIndex<ChangeId, u32, 4>,
+    pub change_index: IdIndex<ChangeId, u32, 4>,
 }
 
 impl DisambiguationData {
@@ -145,7 +145,7 @@ impl IdPrefixContext {
 
 /// Loaded index to disambiguate commit/change IDs.
 pub struct IdPrefixIndex<'a> {
-    indexes: Option<&'a Indexes>,
+    pub indexes: Option<&'a Indexes>,
 }
 
 impl IdPrefixIndex<'_> {
@@ -382,6 +382,57 @@ where
     {
         self.resolve_prefix_with(source, prefix, |_| ())
             .map(|(key, ())| key)
+    }
+
+    pub fn ambiguous_prefixes<S>(&self, source: S, prefix: &HexPrefix) -> Option<Vec<K>>
+    where
+        S: IdIndexSource<P>,
+        S::Entry: IdIndexSourceEntry<K>,
+    {
+        fn collect<K, E>(mut range: impl Iterator<Item = (K, E)>) -> Option<Vec<K>>
+        where
+            K: Eq,
+        {
+            if let Some((_first_key, _first_entry)) = range.next() {
+                let maybe_values = range.map(|(k, _e)| k).collect();
+                Some(maybe_values)
+            } else {
+                None
+            }
+        }
+
+        let min_bytes = prefix.min_prefix_bytes();
+        if min_bytes.is_empty() {
+            // We consider an empty prefix ambiguous even if the index has a single entry.
+            todo!();
+        }
+
+        let to_key_entry_pair = |(_, pointer): &(_, P)| -> (K, S::Entry) {
+            let entry = source.entry_at(pointer);
+            (entry.to_key(), entry)
+        };
+        if min_bytes.len() > N {
+            // If the min prefix (including odd byte) is longer than the stored short keys,
+            // we are sure that min_bytes[..N] does not include the odd byte. Use it to
+            // take contiguous range, then filter by (longer) prefix.matches().
+            let short_bytes = unwrap_as_short_key(min_bytes);
+            let pos = self.index.partition_point(|(s, _)| s < short_bytes);
+            let range = self.index[pos..]
+                .iter()
+                .take_while(|(s, _)| s == short_bytes)
+                .map(to_key_entry_pair)
+                .filter(|(k, _)| prefix.matches(k));
+            collect(range)
+        } else {
+            // Otherwise, use prefix.matches() to deal with odd byte. Since the prefix is
+            // covered by short key width, we're sure that the matching prefixes are sorted.
+            let pos = self.index.partition_point(|(s, _)| &s[..] < min_bytes);
+            let range = self.index[pos..]
+                .iter()
+                .map(to_key_entry_pair)
+                .take_while(|(k, _)| prefix.matches(k));
+            collect(range)
+        }
     }
 
     /// Looks up entry for the key. Returns accessor to neighbors.

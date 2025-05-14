@@ -18,6 +18,7 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use indexmap::IndexSet;
 use thiserror::Error;
 
 use crate::backend::ChangeId;
@@ -173,6 +174,8 @@ pub trait ChangeIdIndex: Send + Sync {
     ///
     /// The order of the returned commit IDs is unspecified.
     fn resolve_prefix(&self, prefix: &HexPrefix) -> PrefixResolution<Vec<CommitId>>;
+
+    fn resolve_ambiguous_prefixes(&self, prefix: &HexPrefix) -> IndexSet<ChangeId>;
 
     /// This function returns the shortest length of a prefix of `key` that
     /// disambiguates it from every other key in the index.

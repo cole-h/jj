@@ -118,6 +118,8 @@ pub trait Repo {
 
     fn index(&self) -> &dyn Index;
 
+    fn change_id_index(&self) -> &dyn ChangeIdIndex;
+
     fn view(&self) -> &View;
 
     fn submodule_store(&self) -> &Arc<dyn SubmoduleStore>;
@@ -283,15 +285,6 @@ impl ReadonlyRepo {
         self.index.as_ref()
     }
 
-    fn change_id_index(&self) -> &dyn ChangeIdIndex {
-        self.change_id_index
-            .get_or_init(|| {
-                self.readonly_index()
-                    .change_id_index(&mut self.view().heads().iter())
-            })
-            .as_ref()
-    }
-
     pub fn op_heads_store(&self) -> &Arc<dyn OpHeadsStore> {
         self.loader.op_heads_store()
     }
@@ -334,6 +327,15 @@ impl Repo for ReadonlyRepo {
 
     fn index(&self) -> &dyn Index {
         self.readonly_index().as_index()
+    }
+
+    fn change_id_index(&self) -> &dyn ChangeIdIndex {
+        self.change_id_index
+            .get_or_init(|| {
+                self.readonly_index()
+                    .change_id_index(&mut self.view().heads().iter())
+            })
+            .as_ref()
     }
 
     fn view(&self) -> &View {
@@ -1889,6 +1891,10 @@ impl Repo for MutableRepo {
         self.index.as_index()
     }
 
+    fn change_id_index(&self) -> &dyn ChangeIdIndex {
+        Box::leak(self.index.change_id_index(&mut self.view().heads().iter()))
+    }
+
     fn view(&self) -> &View {
         self.view
             .get_or_ensure_clean(|v| self.enforce_view_invariants(v))
@@ -1899,13 +1905,11 @@ impl Repo for MutableRepo {
     }
 
     fn resolve_change_id_prefix(&self, prefix: &HexPrefix) -> PrefixResolution<Vec<CommitId>> {
-        let change_id_index = self.index.change_id_index(&mut self.view().heads().iter());
-        change_id_index.resolve_prefix(prefix)
+        self.change_id_index().resolve_prefix(prefix)
     }
 
     fn shortest_unique_change_id_prefix_len(&self, target_id: &ChangeId) -> usize {
-        let change_id_index = self.index.change_id_index(&mut self.view().heads().iter());
-        change_id_index.shortest_unique_prefix_len(target_id)
+        self.change_id_index().shortest_unique_prefix_len(target_id)
     }
 }
 

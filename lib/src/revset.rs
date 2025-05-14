@@ -85,8 +85,12 @@ pub enum RevsetResolutionError {
     EmptyString,
     #[error("Commit ID prefix `{0}` is ambiguous")]
     AmbiguousCommitIdPrefix(String),
-    #[error("Change ID prefix `{0}` is ambiguous")]
-    AmbiguousChangeIdPrefix(String),
+    #[error("Change ID prefix `{change_id}` is ambiguous")]
+    // TODO: also show all possible change IDs
+    AmbiguousChangeIdPrefix {
+        change_id: String,
+        candidates: Vec<Commit>,
+    },
     #[error("Unexpected error from commit backend")]
     Backend(#[source] BackendError),
     #[error(transparent)]
@@ -2000,9 +2004,68 @@ impl PartialSymbolResolver for ChangePrefixResolver<'_> {
                 .map_err(|err| RevsetResolutionError::Other(err.into()))?
                 .unwrap_or(IdPrefixIndex::empty());
             match index.resolve_change_prefix(repo, &prefix) {
-                PrefixResolution::AmbiguousMatch => Err(
-                    RevsetResolutionError::AmbiguousChangeIdPrefix(symbol.to_owned()),
-                ),
+                PrefixResolution::AmbiguousMatch => {
+                    let index = repo.change_id_index();
+                    // FIXME: somehow only show visible ones...?
+                    let mut res2 = index.resolve_ambiguous_prefixes(&prefix);
+                    // res2.sort();
+                    // res2.dedup();
+                    // res2.dedup_by(|a,b|);
+                    // let max_commits = 10.min(res2.len());
+                    // let _ = res2.split_off(max_commits);
+                    // dbg!(&res2);
+                    // todo!();
+
+                    let mut res = Vec::with_capacity(res2.len());
+                    // let mut res = Vec::with_capacity(max_commits);
+
+                    for change_id in res2.clone() {
+                        let Some(commit_ids) = repo.resolve_change_id(&change_id) else {
+                            // FIXME: how is this possible?
+                            continue;
+                        };
+
+                        // dbg!(&commit_ids);
+
+                        let commit = repo.store().get_commit(&commit_ids[0]).unwrap();
+                        // dbg!(&commit.id().to_string(), &commit.change_id().reverse_hex());
+                        res.push(commit);
+                    }
+
+                    // TODO: make it possible to render a nice output that says "your ambiguous
+                    // match matched these change ids" -- this means we need to know the shortest
+                    // unique change id prefix for at least one changeid in this list, and then do
+                    // some pretty printing somehow -- look at `jj st` impl?
+                    //
+                    // TODO: we want to make it nice so that it shows basically what `jj st` shows,
+                    // including the change id, commit id, and message, like this:
+                    //
+
+                    // let template = workspace_command.commit_summary_template();
+                    // write!(formatter, "Working copy  (@) : ")?;
+                    // formatter.with_label("working_copy", |fmt| template.format(wc_commit, fmt))?;
+                    // writeln!(formatter)?;
+                    // for parent in wc_commit.parents() {
+                    //     let parent = parent?;
+                    //     //                "Working copy  (@) : "
+                    //     write!(formatter, "Parent commit (@-): ")?;
+                    //     template.format(&parent, formatter)?;
+                    //     writeln!(formatter)?;
+                    // }
+
+                    //
+                    // TODO: this means a new template probably
+                    //
+                    // TODO: also do this for AmbiguousCommitIdPrefix (todo: abstract)
+                    // for candidate in &res {
+                    //     let shortest = repo.shortest_unique_change_id_prefix_len(&candidate);
+                    // }
+
+                    Err(RevsetResolutionError::AmbiguousChangeIdPrefix {
+                        change_id: symbol.to_owned(),
+                        candidates: res,
+                    })
+                }
                 PrefixResolution::SingleMatch(ids) => Ok(Some(ids)),
                 PrefixResolution::NoMatch => Ok(None),
             }
@@ -2206,9 +2269,11 @@ impl ExpressionStateFolder<UserExpressionState, ResolvedExpressionState>
                     }
                     RevsetResolutionError::EmptyString
                     | RevsetResolutionError::AmbiguousCommitIdPrefix(_)
-                    | RevsetResolutionError::AmbiguousChangeIdPrefix(_)
                     | RevsetResolutionError::Backend(_)
                     | RevsetResolutionError::Other(_) => Err(err),
+                    RevsetResolutionError::AmbiguousChangeIdPrefix { .. } => {
+                        todo!("foo")
+                    }
                 })
             }
             _ => fold_child_expression_state(self, expression),

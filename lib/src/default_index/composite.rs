@@ -24,6 +24,7 @@ use std::iter;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use indexmap::IndexSet;
 use itertools::Itertools as _;
 use ref_cast::ref_cast_custom;
 use ref_cast::RefCastCustom;
@@ -81,6 +82,11 @@ pub(super) trait IndexSegment: Send + Sync {
         &self,
         prefix: &HexPrefix,
     ) -> PrefixResolution<(ChangeId, SmallLocalPositionsVec)>;
+
+    fn resolve_change_id_ambiguous_prefixes(
+        &self,
+        prefix: &HexPrefix,
+    ) -> Option<IndexSet<ChangeId>>;
 
     fn generation_number(&self, local_pos: LocalPosition) -> u32;
 
@@ -285,6 +291,29 @@ impl CompositeIndex {
                         SingleMatch((id, acc_positions))
                     }
                 }
+            })
+    }
+
+    pub(super) fn resolve_ambiguous_change_id_prefixes(
+        &self,
+        prefix: &HexPrefix,
+        // FIXME: this should be a HashSet, and then we just look up the commits
+    ) -> IndexSet<ChangeId> {
+        self.ancestor_index_segments()
+            .fold(IndexSet::new(), |mut ambiguous_change_ids, segment| {
+                let ambiguous = segment.resolve_change_id_ambiguous_prefixes(prefix);
+                match ambiguous {
+                    Some(local_match) => {
+                        dbg!(&local_match
+                            .iter()
+                            .map(|c| c.reverse_hex())
+                            .collect::<Vec<_>>());
+                        ambiguous_change_ids.extend(local_match.into_iter());
+                    }
+                    None => {}
+                }
+
+                ambiguous_change_ids
             })
     }
 
@@ -559,6 +588,11 @@ impl<I: AsCompositeIndex + Send + Sync> ChangeIdIndex for ChangeIdIndexImpl<I> {
             }
             PrefixResolution::AmbiguousMatch => PrefixResolution::AmbiguousMatch,
         }
+    }
+
+    fn resolve_ambiguous_prefixes(&self, prefix: &HexPrefix) -> IndexSet<ChangeId> {
+        let index = self.index.as_composite();
+        index.resolve_ambiguous_change_id_prefixes(prefix)
     }
 
     // Calculates the shortest prefix length of the given `change_id` among all

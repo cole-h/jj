@@ -331,7 +331,7 @@ fn test_resolve_symbol_change_id(readonly: bool) {
     );
     assert_matches!(
         resolve_symbol(repo, "zvly"),
-        Err(RevsetResolutionError::AmbiguousChangeIdPrefix(s)) if s == "zvly"
+        Err(RevsetResolutionError::AmbiguousChangeIdPrefix{change_id, candidates}) if change_id == "zvly" && candidates.contains(&commits[0]) && candidates.contains(&commits[2])
     );
     assert_matches!(
         resolve_symbol(repo, "zvlyw"),

@@ -861,7 +861,7 @@ fn revset_resolution_error_hint(err: &RevsetResolutionError) -> Option<String> {
         RevsetResolutionError::EmptyString
         | RevsetResolutionError::WorkspaceMissingWorkingCopy { .. }
         | RevsetResolutionError::AmbiguousCommitIdPrefix(_)
-        | RevsetResolutionError::AmbiguousChangeIdPrefix(_)
+        | RevsetResolutionError::AmbiguousChangeIdPrefix { .. }
         | RevsetResolutionError::Backend(_)
         | RevsetResolutionError::Other(_) => None,
     }

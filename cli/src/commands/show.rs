@@ -63,19 +63,53 @@ pub(crate) fn cmd_show(
     args: &ShowArgs,
 ) -> Result<(), CommandError> {
     let workspace_command = command.workspace_helper(ui)?;
-    let commit = workspace_command.resolve_single_rev(ui, &args.revision)?;
     let template_string = match &args.template {
         Some(value) => value.to_string(),
         None => workspace_command.settings().get_string("templates.show")?,
     };
-    let template = workspace_command.parse_commit_template(ui, &template_string)?;
     let diff_renderer = workspace_command.diff_renderer_for(&args.format)?;
     ui.request_pager();
-    let mut formatter = ui.stdout_formatter();
-    let formatter = formatter.as_mut();
-    template.format(&commit, formatter)?;
-    if !args.no_patch {
-        diff_renderer.show_patch(ui, formatter, &commit, &EverythingMatcher, ui.term_width())?;
-    }
+
+    match workspace_command.resolve_single_rev(ui, &args.revision) {
+        Ok(commit) => {
+            let template = workspace_command.parse_commit_template(ui, &template_string)?;
+            let mut formatter = ui.stdout_formatter();
+            let formatter = formatter.as_mut();
+            template.format(&commit, formatter)?;
+            if !args.no_patch {
+                diff_renderer.show_patch(
+                    ui,
+                    formatter,
+                    &commit,
+                    &EverythingMatcher,
+                    ui.term_width(),
+                )?;
+            }
+        }
+        Err(mut err) => {
+            // TODO: format_multiple_revisions_error
+            let source = err.error.clone();
+            let Some(jj_lib::revset::RevsetResolutionError::AmbiguousChangeIdPrefix {
+                // FIXME: make this only return the visible ones, maybe?
+                candidates,
+                ..
+            }) = source.downcast_ref()
+            else {
+                return Err(err)?;
+            };
+
+            err.add_hint("Did you mean one of the following changes?");
+            let _ = crate::command_error::handle_command_result(ui, Err(err));
+            let mut formatter = ui.stdout_formatter();
+            let formatter = formatter.as_mut();
+            let template = workspace_command.commit_summary_template();
+            // FIXME: 1) sort by date; 2) sort by visibility; 3) limit to a sane amount
+            for commit in candidates {
+                template.format(&commit, formatter)?;
+                writeln!(formatter)?;
+            }
+        }
+    };
+
     Ok(())
 }
