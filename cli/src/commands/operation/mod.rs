@@ -15,6 +15,7 @@
 mod abandon;
 mod diff;
 mod log;
+mod noop;
 mod restore;
 mod show;
 pub mod undo;
@@ -26,6 +27,8 @@ use diff::cmd_op_diff;
 use diff::OperationDiffArgs;
 use log::cmd_op_log;
 use log::OperationLogArgs;
+use noop::cmd_op_noop;
+use noop::OperationNoopArgs;
 use restore::cmd_op_restore;
 use restore::OperationRestoreArgs;
 use show::cmd_op_show;
@@ -51,6 +54,7 @@ pub enum OperationCommand {
     Restore(OperationRestoreArgs),
     Show(OperationShowArgs),
     Undo(OperationUndoArgs),
+    Noop(OperationNoopArgs),
 }
 
 pub fn cmd_operation(
@@ -65,6 +69,7 @@ pub fn cmd_operation(
         OperationCommand::Restore(args) => cmd_op_restore(ui, command, args),
         OperationCommand::Show(args) => cmd_op_show(ui, command, args),
         OperationCommand::Undo(args) => cmd_op_undo(ui, command, args),
+        OperationCommand::Noop(args) => cmd_op_noop(ui, command, args),
     }
 }
 

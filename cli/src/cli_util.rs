@@ -2478,6 +2478,11 @@ impl WorkspaceCommandTransaction<'_> {
         self.helper.finish_transaction(ui, self.tx, description)
     }
 
+    pub fn noop(self, noop_description: impl Into<String>) -> Result<(), CommandError> {
+        let _ = self.tx.commit(noop_description)?;
+        Ok(())
+    }
+
     /// Returns the wrapped [`Transaction`] for circumstances where
     /// finer-grained control is needed. The caller becomes responsible for
     /// finishing the `Transaction`, including rebasing descendants and updating
