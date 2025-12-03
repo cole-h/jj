@@ -124,7 +124,20 @@ jobs:
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
+        build: [linux-x86_64-gnu, linux-aarch64-gnu, macos-x86_64, macos-aarch64]
+        include:
+          - build: linux-x86_64-gnu
+            os: ubuntu-24.04
+            nix_flags: ""
+          - build: linux-aarch64-gnu
+            os: ubuntu-24.04-arm
+            nix_flags: ""
+          - build: macos-x86_64
+            os: macos-14
+            nix_flags: "--system x86_64-darwin"
+          - build: macos-aarch64
+            os: macos-14
+            nix_flags: ""
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
 
@@ -134,7 +147,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd
-      - run: nix flake check -L --show-trace
+      - run: nix flake check -L --show-trace ${{ matrix.nix_flags }}
 
   check-protos:
     name: check (protos)
